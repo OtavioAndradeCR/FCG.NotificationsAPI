@@ -14,7 +14,7 @@ Consome eventos do broker (RabbitMQ via MassTransit), persiste um espelho local 
 | `PaymentProcessedEvent` (Approved) | `fcg.payment-processed` | Busca usuário pelo UserId no banco → envia e-mail de confirmação |
 | `PaymentProcessedEvent` (Rejected) | `fcg.payment-processed` | Apenas loga — nenhum e-mail enviado |
 
-> **Simulação:** O envio de e-mail é simulado via `ILogger` no console, conforme especificado no Tech Challenge.
+> **Envio de E-mail:** O disparo de e-mails é realizado de fato utilizando a biblioteca **MailKit**, conectando-se a um servidor SMTP configurado (por padrão, configurado para Gmail utilizando App Passwords).
 
 ---
 
@@ -102,12 +102,21 @@ FCG.NotificationsAPI/
 
 | Variável | Origem K8s | Descrição | Padrão |
 |---|---|---|---|
-| `ConnectionStrings__DefaultConnection` | **Secret** | Connection string PostgreSQL | — |
+| `ConnectionStrings__DefaultConnection` | **Secret** | Connection string PostgreSQL | `Host=fiapcloudgames;Database=fcg_notifications;Username=fcg_user;Password=fcg_password` |
 | `RabbitMQ__Host` | ConfigMap | Host do RabbitMQ | `rabbitmq` |
-| `RabbitMQ__Username` | **Secret** | Usuário RabbitMQ | `guest` |
-| `RabbitMQ__Password` | **Secret** | Senha RabbitMQ | `guest` |
-| `RabbitMQ__Queues__UserCreated` | ConfigMap | Nome da fila | `fcg.user-created` |
-| `RabbitMQ__Queues__PaymentProcessed` | ConfigMap | Nome da fila | `fcg.payment-processed` |
+| `RabbitMQ__Username` | **Secret** | Usuário RabbitMQ | `fcg_user` |
+| `RabbitMQ__Password` | **Secret** | Senha RabbitMQ | `fcg_password` |
+| `RabbitMQ__Queues__UserCreated` | ConfigMap | Nome da fila de criação de usuários | `fcg.user-created` |
+| `RabbitMQ__Queues__PaymentProcessed` | ConfigMap | Nome da fila de processamento de pagamentos | `fcg.payment-processed` |
+| `Logging__LogLevel__Default` | ConfigMap | Nível de log padrão | `Information` |
+| `Logging__LogLevel__MassTransit` | ConfigMap | Nível de log do MassTransit | `Information` |
+| `Logging__LogLevel__Microsoft.Hosting.Lifetime` | ConfigMap | Nível de log do ciclo de vida da aplicação | `Information` |
+| `Smtp__Host` | ConfigMap | Host do servidor SMTP | `smtp.gmail.com` |
+| `Smtp__Port` | ConfigMap | Porta do servidor SMTP | `587` |
+| `Smtp__Username` | **Secret** | E-mail de autenticação do SMTP | `seuemail@gmail.com` |
+| `Smtp__Password` | **Secret** | Senha (App Password) do SMTP | `sua-app-password-aqui` |
+| `Smtp__SenderName` | ConfigMap | Nome exibido no remetente dos e-mails | `FIAP Cloud Games` |
+| `Smtp__SenderEmail` | **Secret** | Endereço de e-mail do remetente | `seuemail@gmail.com` |
 
 ---
 
@@ -132,16 +141,19 @@ cd src/FCG.NotificationsAPI
 dotnet run
 ```
 
+> [!IMPORTANT]
+> Para que o envio de e-mails funcione de fato (seja rodando localmente, via Docker Compose ou no Kubernetes), é necessário configurar as informações corretas de SMTP (`Smtp__Username` e `Smtp__Password`) nos arquivos de configuração ou variáveis de ambiente correspondentes. Caso contrário, o serviço gerará erros ao tentar realizar os disparos de e-mail.
+
 ---
 
 ## Deploy no Kubernetes
 
 ```bash
-# 1. Build da imagem
-docker build -t fcg-notifications-api:latest .
+# 1. Build da imagem (ou docker pull igoranthony12/notification-api:latest)
+docker build -t igoranthony12/notification-api:latest .
 
 # 2. Carregar no cluster local (Kind)
-kind load docker-image fcg-notifications-api:latest
+kind load docker-image igoranthony12/notification-api:latest
 
 # 3. Criar namespace se necessário
 kubectl create namespace fcg
