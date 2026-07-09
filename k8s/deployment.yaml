@@ -17,8 +17,7 @@ spec:
     spec:
       containers:
         - name: notifications-api
-          image: fcg-notifications-api:latest
-          imagePullPolicy: Never
+          image: igoranthony12/notification-api:latest
           resources:
             requests:
               memory: "64Mi"
@@ -27,12 +26,10 @@ spec:
               memory: "256Mi"
               cpu: "250m"
 
-          # Variáveis não-sensíveis do ConfigMap
           envFrom:
             - configMapRef:
                 name: notifications-api-config
 
-          # Variáveis sensíveis do Secret
           env:
             - name: RabbitMQ__Username
               valueFrom:
