@@ -2,14 +2,14 @@
 # Estágio 1: Build
 # ──────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /src
+WORKDIR /app
 
-COPY . .
-RUN dotnet restore src/FCG.NotificationsAPI/FCG.NotificationsAPI.csproj
+COPY src/FCG.NotificationsAPI/FCG.NotificationsAPI.csproj ./src/FCG.NotificationsAPI/
+COPY src/FCG.Shared/FCG.Shared.csproj ./src/FCG.Shared/
+RUN dotnet restore ./src/FCG.NotificationsAPI/FCG.NotificationsAPI.csproj
 
-
-RUN dotnet publish \
-    src/FCG.NotificationsAPI/FCG.NotificationsAPI.csproj \
+COPY src/ ./src/
+RUN dotnet publish ./src/FCG.NotificationsAPI/FCG.NotificationsAPI.csproj \
     -c Release \
     -o /app/publish \
     --no-restore
