@@ -23,44 +23,49 @@ public class UserCreatedEventConsumer : IConsumer<UserCreatedEvent>
     }
 
     public async Task Consume(ConsumeContext<UserCreatedEvent> context)
+{
+    var evt = context.Message;
+
+    _logger.LogInformation(
+        "[UserCreatedEvent] Recebido | UserId={UserId} | Nome={Name} | IsAdmin={IsAdmin}",
+        evt.UserId, evt.Name, evt.IsAdmin);
+
+    var user = new NotificationUser
     {
-        var evt = context.Message;
+        Id = evt.UserId,
+        Name = evt.Name,
+        Email = evt.Email,
+        IsAdmin = evt.IsAdmin,
+        CreatedAt = DateTime.UtcNow
+    };
 
-        _logger.LogInformation(
-            "[UserCreatedEvent] Recebido | UserId={UserId} | Nome={Name} | IsAdmin={IsAdmin}",
-            evt.Id, evt.Name, evt.IsAdmin);
+    await _userRepository.UpsertAsync(user, context.CancellationToken);
 
-        // 1. Persistir espelho local do usuário para lookups futuros
-        var user = new NotificationUser
+    _logger.LogInformation(
+        "[UserCreatedEvent] Usuário persistido localmente | UserId={UserId}",
+        evt.UserId);
+
+    if (evt.IsAdmin)
+    {
+        if (string.IsNullOrWhiteSpace(evt.TemporaryPassword))
         {
-            Id        = evt.Id,
-            Name      = evt.Name,
-            Email     = evt.Email,
-            IsAdmin   = evt.IsAdmin,
-            CreatedAt = DateTime.UtcNow
-        };
+            _logger.LogWarning(
+                "[UserCreatedEvent] Admin sem senha temporária. Nenhum e-mail enviado. UserId={UserId}",
+                evt.UserId);
 
-        await _userRepository.UpsertAsync(user, context.CancellationToken);
-
-        _logger.LogInformation(
-            "[UserCreatedEvent] Usuário persistido localmente | UserId={UserId}", evt.Id);
-
-        // 2. Enviar e-mail de boas-vindas adequado ao perfil
-        if (evt.IsAdmin)
-        {
-            if (string.IsNullOrWhiteSpace(evt.TemporaryPassword))
-            {
-                _logger.LogWarning(
-                    "[UserCreatedEvent] Admin sem senha temporária. Nenhum e-mail enviado. UserId={UserId}",
-                    evt.Id);
-                return;
-            }
-
-            await _emailService.SendWelcomeAdminAsync(evt.Name, evt.Email, evt.TemporaryPassword);
+            return;
         }
-        else
-        {
-            await _emailService.SendWelcomeAsync(evt.Name, evt.Email);
-        }
+
+        await _emailService.SendWelcomeAdminAsync(
+            evt.Name,
+            evt.Email,
+            evt.TemporaryPassword);
     }
+    else
+    {
+        await _emailService.SendWelcomeAsync(
+            evt.Name,
+            evt.Email);
+    }
+}
 }
