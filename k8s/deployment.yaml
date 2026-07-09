@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-api
+  namespace: fcg
+  labels:
+    app: notifications-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifications-api
+  template:
+    metadata:
+      labels:
+        app: notifications-api
+    spec:
+      containers:
+        - name: notifications-api
+          image: fcg-notifications-api:latest
+          imagePullPolicy: Never
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+
+          # Variáveis não-sensíveis do ConfigMap
+          envFrom:
+            - configMapRef:
+                name: notifications-api-config
+
+          # Variáveis sensíveis do Secret
+          env:
+            - name: RabbitMQ__Username
+              valueFrom:
+                secretKeyRef:
+                  name: notifications-api-secrets
+                  key: RabbitMQ__Username
+            - name: RabbitMQ__Password
+              valueFrom:
+                secretKeyRef:
+                  name: notifications-api-secrets
+                  key: RabbitMQ__Password
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: notifications-api-secrets
+                  key: ConnectionStrings__DefaultConnection
+            - name: Smtp__Username
+              valueFrom:
+                secretKeyRef:
+                  name: notifications-api-secrets
+                  key: Smtp__Username
+            - name: Smtp__Password
+              valueFrom:
+                secretKeyRef:
+                  name: notifications-api-secrets
+                  key: Smtp__Password
+            - name: Smtp__SenderEmail
+              valueFrom:
+                secretKeyRef:
+                  name: notifications-api-secrets
+                  key: Smtp__SenderEmail
