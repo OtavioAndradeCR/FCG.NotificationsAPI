@@ -2,6 +2,7 @@ using FCG.NotificationsAPI.Settings;
 using HandlebarsDotNet;
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
 
@@ -100,7 +101,6 @@ public class EmailNotificationService : IEmailNotificationService
                 "[EMAIL ERRO] Falha ao enviar para: {To} | Assunto: {Subject}",
                 to, subject);
 
-            // Re-lança para o MassTransit retentar a mensagem
             throw;
         }
     }

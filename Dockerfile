@@ -15,11 +15,11 @@ RUN dotnet publish ./src/FCG.NotificationsAPI/FCG.NotificationsAPI.csproj \
     --no-restore
 
 # ──────────────────────────────────────────────
-# Estágio 2: Runtime
+# Estágio 2: Runtime Lambda
 # ──────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
-WORKDIR /app
+FROM public.ecr.aws/lambda/dotnet:10 AS runtime
+WORKDIR ${LAMBDA_TASK_ROOT}
 
 COPY --from=build /app/publish .
 
-ENTRYPOINT ["dotnet", "FCG.NotificationsAPI.dll"]
+CMD ["FCG.NotificationsAPI::FCG.NotificationsAPI.Functions.NotificationsFunction::HandleAsync"]

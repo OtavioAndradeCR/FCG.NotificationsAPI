@@ -1,0 +1,161 @@
+version: '3.8'
+
+services:
+  fiapcloudgames:
+    image: postgres:15-alpine
+    container_name: fcg-fiapcloudgames
+    environment:
+      POSTGRES_USER: fcg_user
+      POSTGRES_PASSWORD: fcg_password
+      POSTGRES_DB: fcg_main
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fcg_user -d fcg_main"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fcg-network
+
+  rabbitmq:
+    # Imagem com plugins adicionais (Shovel) já habilitados
+    image: rabbitmq:3.12-management-alpine
+    container_name: fcg-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: fcg_user
+      RABBITMQ_DEFAULT_PASS: fcg_password
+      # Habilita os plugins Shovel e Shovel Management na inicialização
+      RABBITMQ_ENABLED_PLUGINS_FILE: /etc/rabbitmq/enabled_plugins
+    volumes:
+      # Arquivo que declara quais plugins habilitar
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      # Script de configuração do Shovel (cria as filas e o shovel via HTTP API)
+      - ./rabbitmq/shovel-setup.sh:/docker-entrypoint-init.d/shovel-setup.sh:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fcg-network
+
+  # Serviço auxiliar que aguarda o RabbitMQ estar pronto
+  # e executa o script de configuração do Shovel via HTTP API
+  rabbitmq-setup:
+    image: curlimages/curl:latest
+    container_name: fcg-rabbitmq-setup
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: fcg_user
+      RABBITMQ_PASS: fcg_password
+      # ARNs das filas SQS de destino — substitua pelos valores reais da sua conta AWS
+      SQS_URL_USER_CREATED: ${SQS_URL_USER_CREATED}
+      SQS_URL_PAYMENT_PROCESSED: ${SQS_URL_PAYMENT_PROCESSED}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    volumes:
+      - ./rabbitmq/shovel-setup.sh:/shovel-setup.sh:ro
+    command: ["sh", "/shovel-setup.sh"]
+    networks:
+      - fcg-network
+    restart: on-failure
+
+  users:
+    image: igoranthony12/users-api:latest
+    container_name: fcg-users
+    ports:
+      - "8081:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=fiapcloudgames;Database=users;Username=fcg_user;Password=fcg_password
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=fcg_user
+      - RabbitMQ__Password=fcg_password
+      - RabbitMQ__VirtualHost=/
+      - Jwt__Key=minha_chave_secreta_super_segura_de_desenvolvimento_com_mais_de_32_caracteres_12345
+    depends_on:
+      fiapcloudgames:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fcg-network
+
+  catalog-worker-service:
+    image: drungas/fcgcatalogworker:latest
+    container_name: fcg-catalog-worker-service
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=fiapcloudgames;Database=catalog;Username=fcg_user;Password=fcg_password
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=fcg_user
+      - RabbitMQ__Password=fcg_password
+      - RabbitMQ__VirtualHost=/
+      - RabbitMQ__KeyQueuePaymentProcessed=payment.processed
+    depends_on:
+      fiapcloudgames:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fcg-network
+
+  catalog:
+    image: devsergioh/fcg-catalog-api:1.0.0
+    container_name: fcg-catalog
+    ports:
+      - "8082:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=fiapcloudgames;Database=catalog;Username=fcg_user;Password=fcg_password
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=fcg_user
+      - RabbitMQ__Password=fcg_password
+      - RabbitMQ__VirtualHost=/
+      - Jwt__SigningKey=minha_chave_secreta_super_segura_de_desenvolvimento_com_mais_de_32_caracteres_12345
+    depends_on:
+      fiapcloudgames:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fcg-network
+
+  payments:
+    image: drungas/fcgpayments:latest
+    container_name: fcg-payments
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=fiapcloudgames;Database=payments;Username=fcg_user;Password=fcg_password
+      - RabbitMQ__VirtualHost=/
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=fcg_user
+      - RabbitMQ__Password=fcg_password
+      - RabbitMQ__KeyQueueOrderPlaced=order_placed
+      - RabbitMQ__KeyPublisher=payment.processed
+    depends_on:
+      fiapcloudgames:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fcg-network
+
+  # Container notifications REMOVIDO — substituído pela Lambda AWS
+
+volumes:
+  postgres_data:
+
+networks:
+  fcg-network:
+    driver: bridge

@@ -1,0 +1,14 @@
+{
+  "Information": [
+    "Este arquivo é usado pela extensão do Visual Studio AWS Toolkit e pelo CLI dotnet-lambda.",
+    "Para mais informações: https://github.com/aws/aws-extensions-for-dotnet-cli"
+  ],
+  "profile": "default",
+  "region": "us-east-1",
+  "configuration": "Release",
+  "function-architecture": "x86_64",
+  "function-runtime": "dotnet10",
+  "function-memory-size": 512,
+  "function-timeout": 30,
+  "function-handler": "FCG.NotificationsAPI::FCG.NotificationsAPI.Functions.NotificationsFunction::FunctionHandler"
+}
