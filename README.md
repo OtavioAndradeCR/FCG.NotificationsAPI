@@ -128,7 +128,7 @@ FCG.NotificationsAPI-Lambda/
     ├── Handlers/
     │   ├── UserCreatedHandler.cs
     │   └── PaymentProcessedHandler.cs
-    ├── Startup.cs                      ← DI reutilizado entre invocações (warm start)
+    ├── Program.cs                      ← DI reutilizado entre invocações (warm start)
     ├── Extensions/
     ├── Data/, Entities/, Repositories/
     ├── Services/, Settings/
