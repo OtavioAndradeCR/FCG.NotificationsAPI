@@ -9,6 +9,7 @@ data:
   RabbitMQ__Host: "rabbitmq"
   RabbitMQ__Queues__UserCreated: "fcg.user-created"
   RabbitMQ__Queues__PaymentProcessed: "fcg.payment-processed"
+  DynamoDB__TableName: "fcg-notification-users"
   Logging__LogLevel__Default: "Information"
   Logging__LogLevel__MassTransit: "Information"
   Logging__LogLevel__Microsoft.Hosting.Lifetime: "Information"

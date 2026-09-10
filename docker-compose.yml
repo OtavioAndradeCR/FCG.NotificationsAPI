@@ -151,6 +151,16 @@ services:
     networks:
       - fcg-network
 
+  # DynamoDB Local — para desenvolvimento/teste offline da Lambda
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: fcg-dynamodb-local
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb"]
+    networks:
+      - fcg-network
+
   # Container notifications REMOVIDO — substituído pela Lambda AWS
 
 volumes:

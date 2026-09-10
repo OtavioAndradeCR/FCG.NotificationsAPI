@@ -41,11 +41,11 @@ spec:
                 secretKeyRef:
                   name: notifications-api-secrets
                   key: RabbitMQ__Password
-            - name: ConnectionStrings__DefaultConnection
+            - name: DynamoDB__TableName
               valueFrom:
                 secretKeyRef:
                   name: notifications-api-secrets
-                  key: ConnectionStrings__DefaultConnection
+                  key: DynamoDB__TableName
             - name: Smtp__Username
               valueFrom:
                 secretKeyRef:
