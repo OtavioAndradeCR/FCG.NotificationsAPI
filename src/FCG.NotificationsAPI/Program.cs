@@ -1,13 +1,13 @@
-using FCG.NotificationsAPI.Data;
+using Amazon.DynamoDBv2;
 using FCG.NotificationsAPI.Extensions;
 using FCG.NotificationsAPI.Handlers;
 using FCG.NotificationsAPI.Repositories;
 using FCG.NotificationsAPI.Services;
 using FCG.NotificationsAPI.Settings;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FCG.NotificationsAPI;
 
@@ -54,24 +54,34 @@ public static class Program
 
         // Configuração tipada
         services.Configure<SmtpSettings>(configuration.GetSection(SmtpSettings.SectionName));
+        services.Configure<DynamoDbSettings>(configuration.GetSection(DynamoDbSettings.SectionName));
 
-        // Banco de dados
-        services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")),
-            ServiceLifetime.Transient);
+        // DynamoDB — credenciais resolvidas pela default credential chain do SDK:
+        //   - Lambda: execution role (sem credenciais explícitas)
+        //   - Local: variáveis de ambiente AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN
+        //            ou ~/.aws/credentials (aws configure)
+        services.AddSingleton<IAmazonDynamoDB>(sp =>
+        {
+            var settings = sp.GetRequiredService<IOptions<DynamoDbSettings>>().Value;
+
+            var config = new AmazonDynamoDBConfig
+            {
+                RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(
+                    configuration["AWS_REGION"] ?? "us-east-1")
+            };
+
+            // DynamoDB Local (dev offline) — aponta para localhost
+            if (!string.IsNullOrEmpty(settings.ServiceURL))
+                config.ServiceURL = settings.ServiceURL;
+
+            return new AmazonDynamoDBClient(config);
+        });
 
         // Repositório, serviços e handlers
         services.AddTransient<INotificationUserRepository, NotificationUserRepository>();
         services.AddTransient<IEmailNotificationService, EmailNotificationService>();
         services.AddHandlers();
 
-        var provider = services.BuildServiceProvider();
-
-        // Aplicar migrations na inicialização fria do Lambda
-        using var scope = provider.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        db.Database.Migrate();
-
-        return provider;
+        return services.BuildServiceProvider();
     }
 }

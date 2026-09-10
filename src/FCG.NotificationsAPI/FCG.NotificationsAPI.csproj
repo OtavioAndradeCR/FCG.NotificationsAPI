@@ -18,13 +18,8 @@
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Handlebars.Net" Version="2.1.6" />
 
-    <!-- Banco -->
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
+    <!-- Banco (DynamoDB) -->
+    <PackageReference Include="AWSSDK.DynamoDBv2" Version="4.0.103.7" />
 
     <!-- Logging e DI explícitos (não puxados transitivamente pelo SDK base) -->
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.9" />
