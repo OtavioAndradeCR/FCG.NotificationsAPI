@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FCG.NotificationsAPI\FCG.NotificationsAPI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\src\FCG.NotificationsAPI\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\FCG.NotificationsAPI\Templates\Hbs\*.hbs" Link="Templates\Hbs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
