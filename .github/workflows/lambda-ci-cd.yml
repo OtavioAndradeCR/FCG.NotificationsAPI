@@ -193,14 +193,11 @@ jobs:
               echo "Fila não encontrada. Criando: ${queue_name}"
 
               queue_url="$(aws sqs create-queue \
-                --queue-name "$queue_name" \
-                --attributes \
-                  VisibilityTimeout=60 \
-                  MessageRetentionPeriod=345600 \
-                  ReceiveMessageWaitTimeSeconds=10 \
-                --region "$AWS_REGION" \
-                --query 'QueueUrl' \
-                --output text)"
+            --queue-name "$queue_name" \
+            --attributes 'VisibilityTimeout=60,MessageRetentionPeriod=345600,ReceiveMessageWaitTimeSeconds=10' \
+            --region "$AWS_REGION" \
+            --query 'QueueUrl' \
+            --output text)"
 
               echo "Fila criada: ${queue_url}"
             else
