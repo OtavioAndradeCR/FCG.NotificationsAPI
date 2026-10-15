@@ -50,12 +50,13 @@ jobs:
           else
             echo "Foram encontrados ${#TEST_PROJECTS[@]} projetos de teste."
 
-          for project in "${TEST_PROJECTS[@]}"; do
-            dotnet test "$project" \
-              --configuration Release \
-              --logger "trx;LogFileName=$(basename "${project%.csproj}").trx" \
-              --results-directory "${{ github.workspace }}/TestResults"
-          done
+            for project in "${TEST_PROJECTS[@]}"; do
+              dotnet test "$project" \
+                --configuration Release \
+                --logger "trx;LogFileName=$(basename "${project%.csproj}").trx" \
+                --results-directory "${{ github.workspace }}/TestResults"
+            done
+          fi
 
       - name: Upload test results
         if: always()
