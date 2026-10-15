@@ -169,7 +169,72 @@ jobs:
           aws lambda wait function-active-v2 \
             --function-name "$FUNCTION_NAME" \
             --region "$AWS_REGION"
+      
+      - name: Ensure SQS queues exist
+        shell: bash
+        run: |
+          set -euo pipefail
 
+          ensure_queue() {
+            local queue_name="$1"
+            local queue_url=""
+            local max_attempts=15
+            local attempt=1
+
+            echo "Verificando fila SQS: ${queue_name}"
+
+            queue_url="$(aws sqs get-queue-url \
+              --queue-name "$queue_name" \
+              --region "$AWS_REGION" \
+              --query 'QueueUrl' \
+              --output text 2>/dev/null || true)"
+
+            if [[ -z "$queue_url" || "$queue_url" == "None" ]]; then
+              echo "Fila não encontrada. Criando: ${queue_name}"
+
+              queue_url="$(aws sqs create-queue \
+                --queue-name "$queue_name" \
+                --attributes \
+                  VisibilityTimeout=60 \
+                  MessageRetentionPeriod=345600 \
+                  ReceiveMessageWaitTimeSeconds=10 \
+                --region "$AWS_REGION" \
+                --query 'QueueUrl' \
+                --output text)"
+
+              echo "Fila criada: ${queue_url}"
+            else
+              echo "Fila já existe: ${queue_url}"
+            fi
+
+            echo "Aguardando a fila ficar disponível..."
+
+            while (( attempt <= max_attempts )); do
+              if aws sqs get-queue-attributes \
+                --queue-url "$queue_url" \
+                --attribute-names QueueArn \
+                --region "$AWS_REGION" \
+                >/dev/null 2>&1; then
+                echo "Fila disponível: ${queue_name}"
+                break
+              fi
+
+              if (( attempt == max_attempts )); then
+                echo "::error::A fila ${queue_name} não ficou disponível após ${max_attempts} tentativas."
+                exit 1
+              fi
+
+              echo "Tentativa ${attempt}/${max_attempts}. Aguardando 2 segundos..."
+              sleep 2
+              ((attempt++))
+            done
+
+            # O SQS requer um pequeno intervalo após a criação antes do primeiro uso.
+            sleep 2
+          }
+
+          ensure_queue "$SQS_USER_QUEUE"
+          ensure_queue "$SQS_PAYMENT_QUEUE"
       - name: Create SQS triggers when missing
         shell: bash
         env:
@@ -179,8 +244,32 @@ jobs:
 
           ensure_mapping() {
             local queue_name="$1"
-            local queue_arn="arn:aws:sqs:${AWS_REGION}:${ACCOUNT_ID}:${queue_name}"
-            local mapping_uuid
+            local queue_url=""
+            local queue_arn=""
+            local mapping_uuid=""
+
+            echo "Configurando trigger para a fila: ${queue_name}"
+
+            queue_url="$(aws sqs get-queue-url \
+              --queue-name "$queue_name" \
+              --region "$AWS_REGION" \
+              --query 'QueueUrl' \
+              --output text)"
+
+            queue_arn="$(aws sqs get-queue-attributes \
+              --queue-url "$queue_url" \
+              --attribute-names QueueArn \
+              --region "$AWS_REGION" \
+              --query 'Attributes.QueueArn' \
+              --output text)"
+
+            if [[ -z "$queue_arn" || "$queue_arn" == "None" ]]; then
+              echo "::error::Não foi possível obter o ARN da fila ${queue_name}."
+              exit 1
+            fi
+
+            echo "Queue URL: ${queue_url}"
+            echo "Queue ARN: ${queue_arn}"
 
             mapping_uuid="$(aws lambda list-event-source-mappings \
               --function-name "$FUNCTION_NAME" \
@@ -190,13 +279,16 @@ jobs:
               --output text)"
 
             if [[ -z "$mapping_uuid" || "$mapping_uuid" == "None" ]]; then
+              echo "Criando event source mapping..."
+
               aws lambda create-event-source-mapping \
                 --function-name "$FUNCTION_NAME" \
                 --event-source-arn "$queue_arn" \
                 --batch-size 10 \
+                --function-response-types ReportBatchItemFailures \
                 --region "$AWS_REGION"
             else
-              echo "Trigger already exists for ${queue_name}: ${mapping_uuid}"
+              echo "Trigger já existe para ${queue_name}: ${mapping_uuid}"
             fi
           }
 
