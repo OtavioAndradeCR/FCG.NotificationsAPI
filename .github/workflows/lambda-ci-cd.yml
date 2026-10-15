@@ -162,7 +162,7 @@ jobs:
               --zip-file "fileb://${ZIP}" \
               --memory-size 512 \
               --timeout 30 \
-              --environment "Variables={DynamoDB__TableName=${{env.DYNAMODB_TABLE}},,Smtp__Host=smtp.gmail.com,Smtp__Port=587,Smtp__Username=${{ secrets.SMTP_USERNAME }},Smtp__Password=${{ secrets.SMTP_PASSWORD }},Smtp__SenderName=FIAP Cloud Games,Smtp__SenderEmail=${{ secrets.SMTP_SENDER_EMAIL }}}" \
+              --environment "Variables={DynamoDB__TableName=${{env.DYNAMODB_TABLE}},Smtp__Host=smtp.gmail.com,Smtp__Port=587,Smtp__Username=${{ secrets.SMTP_USERNAME }},Smtp__Password=${{ secrets.SMTP_PASSWORD }},Smtp__SenderName=FIAP Cloud Games,Smtp__SenderEmail=${{ secrets.SMTP_SENDER_EMAIL }}}" \
               --region "$AWS_REGION"
           fi
 
