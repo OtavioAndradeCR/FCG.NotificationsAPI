@@ -6,16 +6,13 @@ using FCG.Shared.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-// Registra o serializador padrão da Lambda
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
 namespace FCG.NotificationsAPI.Functions;
 
 public class NotificationsFunction
 {
-    // Identificadores do tipo de evento — devem bater com o atributo
-    // MessageGroupId ou MessageAttribute configurado no Shovel/publisher
-    private const string UserCreatedEventType     = "UserCreatedEvent";
+    private const string UserCreatedEventType      = "UserCreatedEvent";
     private const string PaymentProcessedEventType = "PaymentProcessedEvent";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -23,65 +20,55 @@ public class NotificationsFunction
         PropertyNameCaseInsensitive = true
     };
 
-    /// <summary>
-    /// Entry point triggerado pelo SQS.
-    /// Cada mensagem SQS carrega um envelope com "EventType" e "Payload".
-    /// </summary>
-    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
+    private readonly IServiceProvider _services;
+
+    /// <summary>Construtor exigido pelo runtime do Lambda.</summary>
+    public NotificationsFunction() : this(Program.ServiceProvider) { }
+
+    /// <summary>Usado pelos testes para injetar fakes.</summary>
+    public NotificationsFunction(IServiceProvider services)
     {
-        var logger = Program.ServiceProvider
-            .GetRequiredService<ILogger<NotificationsFunction>>();
+        _services = services;
+    }
 
-        logger.LogInformation(
-            "[Lambda] Invocação recebida com {Count} mensagem(ns).",
-            sqsEvent.Records.Count);
+    /// <summary>
+    /// Entry point do SQS. Retorna SQSBatchResponse com APENAS as mensagens que falharam.
+    /// Requer ReportBatchItemFailures no event source mapping (o workflow já configura).
+    /// Lançar exceção aqui reentregaria o lote inteiro e duplicaria e-mails já enviados.
+    /// </summary>
+    public async Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
+    {
+        var logger = _services.GetRequiredService<ILogger<NotificationsFunction>>();
 
-        // Lambda com SQS: processar cada mensagem individualmente
-        // e reportar falhas parciais para não bloquear mensagens válidas
-        var batchItemFailures = new List<SQSBatchResponse.BatchItemFailure>();
+        logger.LogInformation("[Lambda] Invocação recebida com {Count} mensagem(ns).", sqsEvent.Records.Count);
+
+        var failures = new List<SQSBatchResponse.BatchItemFailure>();
 
         foreach (var record in sqsEvent.Records)
         {
             try
             {
-                await ProcessRecordAsync(record, context);
+                await ProcessRecordAsync(record, logger);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex,
-                    "[Lambda] Falha ao processar mensagem MessageId={MessageId}",
-                    record.MessageId);
-
-                // Reporta falha parcial — SQS vai retentar só essa mensagem
-                batchItemFailures.Add(new SQSBatchResponse.BatchItemFailure
-                {
-                    ItemIdentifier = record.MessageId
-                });
+                logger.LogError(ex, "[Lambda] Falha ao processar MessageId={MessageId}", record.MessageId);
+                failures.Add(new SQSBatchResponse.BatchItemFailure { ItemIdentifier = record.MessageId });
             }
         }
 
-        if (batchItemFailures.Count > 0)
-        {
-            throw new Exception(
-                $"{batchItemFailures.Count} mensagem(ns) falharam. " +
-                $"IDs: {string.Join(", ", batchItemFailures.Select(f => f.ItemIdentifier))}");
-        }
+        return new SQSBatchResponse { BatchItemFailures = failures };
     }
 
-    private static async Task ProcessRecordAsync(SQSEvent.SQSMessage record, ILambdaContext context)
+    private async Task ProcessRecordAsync(SQSEvent.SQSMessage record, ILogger logger)
     {
-        var logger = Program.ServiceProvider
-            .GetRequiredService<ILogger<NotificationsFunction>>();
-
-        // Extrair tipo do evento do atributo da mensagem SQS
-        // O Shovel configura esse atributo via "x-event-type" ou similar
         var eventType = GetEventType(record);
 
         logger.LogInformation(
             "[Lambda] Processando MessageId={MessageId} | EventType={EventType}",
             record.MessageId, eventType);
 
-        using var scope = Program.ServiceProvider.CreateScope();
+        using var scope = _services.CreateScope();
 
         switch (eventType)
         {
@@ -89,9 +76,7 @@ public class NotificationsFunction
             {
                 var evt = JsonSerializer.Deserialize<UserCreatedEvent>(record.Body, JsonOptions)
                     ?? throw new InvalidOperationException("Falha ao desserializar UserCreatedEvent.");
-
-                var handler = scope.ServiceProvider.GetRequiredService<UserCreatedHandler>();
-                await handler.HandleAsync(evt);
+                await scope.ServiceProvider.GetRequiredService<UserCreatedHandler>().HandleAsync(evt);
                 break;
             }
 
@@ -99,27 +84,26 @@ public class NotificationsFunction
             {
                 var evt = JsonSerializer.Deserialize<PaymentProcessedEvent>(record.Body, JsonOptions)
                     ?? throw new InvalidOperationException("Falha ao desserializar PaymentProcessedEvent.");
-
-                var handler = scope.ServiceProvider.GetRequiredService<PaymentProcessedHandler>();
-                await handler.HandleAsync(evt);
+                await scope.ServiceProvider.GetRequiredService<PaymentProcessedHandler>().HandleAsync(evt);
                 break;
             }
 
             default:
-                logger.LogWarning(
-                    "[Lambda] EventType desconhecido: {EventType}. Mensagem ignorada.",
-                    eventType);
-                break;
+                // Antes: logava warning e DESCARTAVA a mensagem (perda silenciosa).
+                // Agora: falha, e a DLQ da fila guarda a mensagem para análise.
+                throw new InvalidOperationException($"EventType desconhecido: '{eventType}'.");
         }
     }
 
     private static string GetEventType(SQSEvent.SQSMessage record)
     {
-        // Primeiro tenta pegar do atributo da mensagem (configurado pelo Shovel)
-        if (record.MessageAttributes.TryGetValue("EventType", out var attr))
-            return attr.StringValue ?? string.Empty;
+        if (record.MessageAttributes is not null &&
+            record.MessageAttributes.TryGetValue("EventType", out var attr) &&
+            !string.IsNullOrWhiteSpace(attr.StringValue))
+        {
+            return attr.StringValue;
+        }
 
-        // Fallback: tenta inferir pelo nome da fila de origem
         var sourceArn = record.EventSourceArn ?? string.Empty;
 
         if (sourceArn.Contains("user-created", StringComparison.OrdinalIgnoreCase))

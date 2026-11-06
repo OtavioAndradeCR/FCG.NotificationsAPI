@@ -7,11 +7,11 @@ Microsserviço de Notificações da plataforma **FIAP Cloud Games** refatorado p
 ## Arquitetura
 
 ```
-UsersAPI ──────► RabbitMQ (fcg.user-created)    ──► Shovel ──► SQS fcg-user-created     ──► Lambda
-PaymentsAPI ───► RabbitMQ (payment.processed)   ──► Shovel ──► SQS fcg-payment-processed ──► Lambda
+UsersAPI ──────► RabbitMQ (fcg.user-created)   ─┐
+PaymentsAPI ───► RabbitMQ (payment.processed)  ─┴─► NotificationsForwarder ──► SQS ──► Lambda (este repo)
 ```
 
-O **RabbitMQ Shovel** encaminha automaticamente as mensagens das filas locais para as filas SQS na AWS. O Lambda é triggerado pelo SQS e processa cada mensagem de forma serverless:
+O **FCG.NotificationsForwarder** (repositório próprio) é um worker MassTransit que consome as filas do RabbitMQ e republica cada mensagem no SQS, só confirmando (ack) no RabbitMQ depois que o SQS aceitou. O Lambda é acionado pelo SQS. Mensagens que falham 10 vezes vão para a DLQ `fcg-notifications-dlq`.
 
 | Evento | Fluxo |
 |---|---|
@@ -111,28 +111,28 @@ aws dynamodb create-table \
 
 ---
 
-## 4. Configurar o ambiente local (FCG.Infra)
+## 4. Ambiente local
+
+A infraestrutura completa (RabbitMQ, APIs e Forwarder) sobe pelo repositório **FCG.Infra**.
+Neste repositório só é necessário o DynamoDB Local, para testar sem gastar a conta do Lab:
 
 ```bash
-# Na pasta do FCG.Infra, copie e preencha o .env
-cp .env.example .env
-# Edite .env com suas credenciais AWS e URLs SQS
-
-# Suba o compose (RabbitMQ com Shovel configurado automaticamente)
-docker compose up -d
+docker compose up -d dynamodb-local
 ```
 
-O serviço `rabbitmq-setup` vai configurar automaticamente os Shovels via HTTP API.
+E aponte `DynamoDB:ServiceURL` para `http://localhost:8000` (já configurado no `appsettings.Development.json`).
 
-### DynamoDB Local (dev offline)
+### Configuração SMTP (nenhuma credencial fica no código)
 
-Para testar a Lambda localmente **sem gastar a conta do Lab**:
+`appsettings.json` não contém usuário/senha. Informe por variável de ambiente:
 
 ```bash
-docker compose up dynamodb-local
+export Smtp__Username=seu-email@gmail.com
+export Smtp__Password=<app-password-do-gmail>
+export Smtp__SenderEmail=seu-email@gmail.com
 ```
 
-E aponte o `DynamoDB:ServiceURL` para `http://localhost:8000` (já configurado no `appsettings.Development.json`).
+No pipeline, esses valores vêm de GitHub Secrets (`SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`).
 
 ---
 
@@ -240,30 +240,27 @@ dotnet run --project tests/e2e-test/e2e-test.csproj
 ## 7. Estrutura do projeto
 
 ```
-FCG.NotificationsAPI-Lambda/
-├── .env.example                        ← template de variáveis (valores mascarados)
-├── .env                                ← variáveis reais (NÃO versionado — .gitignore)
-├── docker-compose.yml                  ← FCG.Infra (RabbitMQ + Shovel + dynamodb-local)
-├── docs/
-│   └── migracao-dynamodb.md            ← plano de migração PostgreSQL → DynamoDB
-├── rabbitmq/
-│   ├── enabled_plugins                 ← habilita Shovel no RabbitMQ
-│   └── shovel-setup.sh                 ← configura Shovels via HTTP API
+FCG.NotificationsAPI/
+├── .github/workflows/lambda-ci-cd.yml  ← build, testes, deploy e infra (SQS, DLQ, DynamoDB, triggers)
+├── .env.example
+├── docker-compose.yml                  ← apenas dynamodb-local (dev)
+├── docs/migracao-dynamodb.md
 ├── tests/
-│   └── e2e-test/                       ← teste ponta a ponta local
+│   ├── FCG.NotificationsAPI.Tests/     ← testes unitários (rodam no pipeline)
+│   └── e2e-test/                       ← ponta a ponta local (usa AWS e SMTP reais; NÃO roda no pipeline)
 └── src/FCG.NotificationsAPI/
-    ├── Functions/
-    │   └── NotificationsFunction.cs    ← entry point Lambda (trigger SQS)
-    ├── Handlers/
-    │   ├── UserCreatedHandler.cs
-    │   └── PaymentProcessedHandler.cs
-    ├── Program.cs                      ← DI reutilizado entre invocações (warm start)
-    ├── Extensions/
-    ├── Data/, Entities/, Repositories/
-    ├── Services/, Settings/
-    ├── Templates/Hbs/
-    ├── aws-lambda-tools-defaults.json
+    ├── Functions/NotificationsFunction.cs   ← entry point Lambda (SQS) com falha parcial de lote
+    ├── Handlers/                            ← UserCreatedHandler, PaymentProcessedHandler
+    ├── Repositories/                        ← DynamoDB
+    ├── Services/, Settings/, Templates/Hbs/
+    ├── Program.cs                           ← DI reaproveitado entre invocações (warm start)
     └── appsettings.json
+```
+
+### Testes
+
+```bash
+dotnet test tests/FCG.NotificationsAPI.Tests
 ```
 
 ---
