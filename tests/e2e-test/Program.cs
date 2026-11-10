@@ -8,7 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 // ─────────────────────────────────────────────────────────────
 
 var userId = Guid.NewGuid();
-var email = "grupofiap77@gmail.com"; // inbox do usuário para verificação
+var email = Environment.GetEnvironmentVariable("E2E_TEST_EMAIL")
+    ?? throw new InvalidOperationException("Defina E2E_TEST_EMAIL com a caixa de entrada de teste.");
 
 Console.WriteLine("=== TESTE E2E: UserCreatedEvent (usuário comum) ===");
 var userHandler = FCG.NotificationsAPI.Program.ServiceProvider.GetRequiredService<UserCreatedHandler>();

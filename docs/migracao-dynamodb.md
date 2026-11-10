@@ -1,5 +1,7 @@
 # Plano de Implementação — Migração PostgreSQL → DynamoDB
 
+> **Documento histórico.** Descreve o plano da migração para DynamoDB. A implementação final difere dele: `k8s/` e `Dockerfile` foram removidos porque a NotificationsAPI roda em Lambda, e o deploy é feito por `.github/workflows/lambda-ci-cd.yml`. Para o estado atual, consulte o README.
+
 > **Projeto:** FCG.NotificationsAPI (AWS Lambda)
 > **Objetivo:** Trocar o banco de dados de PostgreSQL/EF Core para DynamoDB, **preservando exatamente o fluxo atual** de notificação por e-mail.
 > **Status:** Aprovado — aguardando implementação

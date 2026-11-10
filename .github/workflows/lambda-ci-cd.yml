@@ -232,6 +232,37 @@ jobs:
 
           ensure_queue "$SQS_USER_QUEUE"
           ensure_queue "$SQS_PAYMENT_QUEUE"
+      - name: Ensure DLQ and redrive policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          DLQ_NAME="fcg-notifications-dlq"
+
+          DLQ_URL="$(aws sqs get-queue-url --queue-name "$DLQ_NAME" \
+            --region "$AWS_REGION" --query 'QueueUrl' --output text 2>/dev/null || true)"
+
+          if [[ -z "$DLQ_URL" || "$DLQ_URL" == "None" ]]; then
+            DLQ_URL="$(aws sqs create-queue --queue-name "$DLQ_NAME" \
+              --attributes 'MessageRetentionPeriod=1209600' \
+              --region "$AWS_REGION" --query 'QueueUrl' --output text)"
+          fi
+
+          DLQ_ARN="$(aws sqs get-queue-attributes --queue-url "$DLQ_URL" \
+            --attribute-names QueueArn --region "$AWS_REGION" \
+            --query 'Attributes.QueueArn' --output text)"
+
+          jq -n --arg arn "$DLQ_ARN" \
+            '{RedrivePolicy: ({deadLetterTargetArn: $arn, maxReceiveCount: "10"} | tostring)}' \
+            > "${{ runner.temp }}/redrive.json"
+
+          for QUEUE in "$SQS_USER_QUEUE" "$SQS_PAYMENT_QUEUE"; do
+            URL="$(aws sqs get-queue-url --queue-name "$QUEUE" \
+              --region "$AWS_REGION" --query 'QueueUrl' --output text)"
+            aws sqs set-queue-attributes --queue-url "$URL" \
+              --attributes "file://${{ runner.temp }}/redrive.json" --region "$AWS_REGION"
+            echo "Redrive policy aplicada em ${QUEUE} -> ${DLQ_NAME}"
+          done
+
       - name: Create SQS triggers when missing
         shell: bash
         env:
